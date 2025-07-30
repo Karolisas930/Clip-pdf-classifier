@@ -42,3 +42,9 @@ if uploaded_file:
     st.subheader("Prediction Results:")
     for label, prob in zip(labels, probs[0]):
         st.write(f"{label}: {prob:.2%}")
+        
+import subprocess
+subprocess.run(["pip", "install", "git+https://github.com/openai/CLIP.git"])
+
+import clip
+
