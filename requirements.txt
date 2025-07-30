@@ -5,4 +5,3 @@ regex
 tqdm
 Pillow
 PyMuPDF==1.23.7
-git+https://github.com/openai/CLIP.git
