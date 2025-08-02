@@ -1,0 +1,31 @@
+from PIL import Image
+import pytesseract
+
+# Optional: Set path to Tesseract binary if needed
+# pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
+
+# Load and process the image
+image = Image.open("your_image.png") # Replace with your image file
+text = pytesseract.image_to_string(image)
+
+print("Extracted text:")
+print(text)
+
+
+# Go to your project folder (or create one)
+mkdir ocr-pytesseract-demo
+cd ocr-pytesseract-demo
+
+# Move your script into this folder
+mv /path/to/ocr_test.py .
+
+# Initialize Git
+git init
+git add ocr_test.py
+git commit -m "Add OCR test script with pytesseract"
+
+# Link to your GitHub repo (replace with your actual URL)
+git remote add origin https://github.com/YOUR_USERNAME/ocr-pytesseract-demo.git
+
+# Push the script
+git push -u origin master
