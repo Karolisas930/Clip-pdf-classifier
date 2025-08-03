@@ -18,7 +18,7 @@ model, preprocess = clip.load("ViT-B/32", device=device)
 st.title("📄 Smart PDF Classifier with CLIP")
 
 # Upload PDF file
-uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
+uploaded_file = st.file_uploader("Upload a PDF or image file", type=["pdf", "png", "jpg", "jpeg"],)
 if uploaded_file:
     # Save PDF
     with open("temp.pdf", "wb") as f:
