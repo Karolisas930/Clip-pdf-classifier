@@ -7,21 +7,18 @@ import fitz # PyMuPDF
 import pandas as pd
 from ocr_utils import extract_text_from_image
 
-# — Load & cache hierarchical labels from your three CSVs —
+# — Load & cache your single hierarchy.csv —
 @st.cache_data
 def load_labels():
-    df_sec = pd.read_csv("Industry-Grid view.csv").fillna("")
-    df_cat = pd.read_csv("Service Category-Grid view.csv").fillna("")
-    df_sub = pd.read_csv("Specialization-Grid view.csv").fillna("")
-    merged = (
-        df_sub
-        .merge(df_cat, left_on="category_id", right_on="id", suffixes=("_sub","_cat"))
-        .merge(df_sec, left_on="section_id", right_on="id", suffixes=("","_sec"))
+    df = pd.read_csv("hierarchy.csv").fillna("")
+    df["full_label"] = (
+        df["Industry"].astype(str)
+        + " > "
+        + df["Service Category"].astype(str)
+        + " > "
+        + df["Specialization"].astype(str)
     )
-    merged["full_label"] = (
-        merged["name_sec"] + " > " + merged["name_cat"] + " > " + merged["name_subcat"]
-    )
-    return merged["full_label"].dropna().unique().tolist()
+    return [lbl for lbl in df["full_label"].unique() if lbl.strip() != ""]
 
 LABELS = load_labels()
 
@@ -44,7 +41,7 @@ if not uploaded:
     st.info("Please upload a PDF or image file to classify.")
     st.stop()
 
-# — Branch on file type to get a single preview image —
+# — Branch on file type to produce a single preview image —
 if uploaded.type == "application/pdf":
     with open("temp.pdf", "wb") as f:
         f.write(uploaded.getbuffer())
@@ -61,10 +58,9 @@ else:
 # — Display preview and extract OCR text —
 st.image(image_path, caption="Preview", use_column_width=True)
 st.subheader("📝 Extracted OCR Text")
-ocr_text = extract_text_from_image(image_path)
-st.write(ocr_text)
+st.write(extract_text_from_image(image_path))
 
-# — CLIP classification against your hierarchy —
+# — CLIP classification against your hierarchy labels —
 st.subheader("🔮 Classification Results")
 img_tensor = PREPROCESS(Image.open(image_path)).unsqueeze(0).to(DEVICE)
 with torch.no_grad():
