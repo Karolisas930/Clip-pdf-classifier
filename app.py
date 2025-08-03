@@ -30,10 +30,6 @@ img_file = st.file_uploader(
     key="uploader_img",
 )
 
-    # Save PDF
-    with open("temp.pdf", "wb") as f:
-        f.write(uploaded_file.read())
-
     # Convert first page to image
     doc = fitz.open("temp.pdf")
     page = doc.load_page(0)
