@@ -1,7 +1,9 @@
 streamlit
 torch
-ftfy
-regex
-tqdm
-Pillow
-PyMuPDF==1.22.5
+pillow
+numpy
+pytesseract
+PyMuPDF
+pandas
+scikit-learn
+openai-clip
