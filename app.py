@@ -62,17 +62,7 @@ st.write(ocr_text)
 # …followed by your CLIP encoding/classification…
 
     # Load labels from hierarchy.csv
-    import subprocess
-subprocess.run(["pip", "install", "git+https://github.com/openai/CLIP.git"], check=True)
 
-import clip
-import streamlit as st
-import torch
-from PIL import Image
-import os
-import fitz # PyMuPDF
-import pandas as pd
-from ocr_utils import extract_text_from_image
 
 # Load CLIP model
 device = "cuda" if torch.cuda.is_available() else "cpu"
