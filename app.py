@@ -6,6 +6,10 @@ from PIL import Image
 import fitz # PyMuPDF
 import pandas as pd
 from ocr_utils import extract_text_from_image
+import numpy as np
+import streamlit as st
+
+st.write("✅ NumPy imported, version:", np.__version__)
 
 # — Load & cache your single hierarchy.csv —
 @st.cache_data
