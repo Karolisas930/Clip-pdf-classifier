@@ -17,33 +17,49 @@ model, preprocess = clip.load("ViT-B/32", device=device)
 
 st.title("📄 Smart PDF Classifier with CLIP")
 
-# Upload PDF file
-pdf_file = st.file_uploader(
-    "Upload a PDF file",
-    type=["pdf"],
-    key="uploader_pdf",
+st.set_page_config(page_title="Smart PDF/Image Classifier", layout="wide")
+st.title("📄 Smart PDF/Image Classifier with CLIP")
+
+# ——— Single, multi-type uploader ———
+uploaded = st.file_uploader(
+    "Upload a PDF or image file",
+    type=["pdf", "png", "jpg", "jpeg"],
+    key="uploader_mixed",
 )
 
-img_file = st.file_uploader(
-    "Upload an image",
-    type=["png","jpg","jpeg"],
-    key="uploader_img",
-)
+# If nothing uploaded, show info and stop here
+if not uploaded:
+    st.info("Please upload a PDF or image file to classify.")
+    st.stop()
 
-    # Convert first page to image
+# ——— Branch by MIME type ———
+if uploaded.type == "application/pdf":
+    # save PDF to disk
+    with open("temp.pdf", "wb") as f:
+        f.write(uploaded.getbuffer())
+
+    # render first page from PDF
     doc = fitz.open("temp.pdf")
     page = doc.load_page(0)
     pix = page.get_pixmap()
     image_path = "preview.png"
     pix.save(image_path)
+else:
+    # handle image upload directly
+    image = Image.open(uploaded)
+    image_path = "preview.png"
+    image.save(image_path)
 
-    # Display preview
-    st.image(image_path, caption="Preview of PDF")
+# ——— Now both branches set `image_path` ———
+# Display preview
+st.image(image_path, caption="Preview", use_column_width=True)
 
-    # OCR text
-    ocr_text = extract_text_from_image(image_path)
-    st.subheader("📝 Extracted OCR Text:")
-    st.write(ocr_text)
+# OCR
+st.subheader("📝 Extracted OCR Text")
+ocr_text = extract_text_from_image(image_path)
+st.write(ocr_text)
+
+# …followed by your CLIP encoding/classification…
 
     # Load labels from hierarchy.csv
     import subprocess
