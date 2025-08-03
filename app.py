@@ -18,14 +18,17 @@ def load_labels():
         + " > "
         + df["Specialization"].astype(str)
     )
-    return [lbl for lbl in df["full_label"].unique() if lbl.strip() != ""]
+    # drop any empty labels
+    return [lbl for lbl in df["full_label"].unique() if lbl.strip()]
 
 LABELS = load_labels()
 
 # — Load CLIP model once —
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL, PREPROCESS = clip.load("ViT-B/32", device=DEVICE)
-TEXT_TOKENS = clip.tokenize(LABELS).to(DEVICE)
+
+# ───── Apply text truncation for long labels ─────
+TEXT_TOKENS = clip.tokenize(LABELS, truncate=True).to(DEVICE)
 
 # — Streamlit page config & title —
 st.set_page_config(page_title="Smart PDF/Image Classifier", layout="wide")
@@ -65,9 +68,10 @@ st.subheader("🔮 Classification Results")
 img_tensor = PREPROCESS(Image.open(image_path)).unsqueeze(0).to(DEVICE)
 with torch.no_grad():
     image_features = MODEL.encode_image(img_tensor)
-    text_features = MODEL.encode_text(TEXT_TOKENS)
-    logits = (image_features @ text_features.T).softmax(dim=-1)
+    # text_features isn’t needed again, since we precomputed TEXT_TOKENS
+    logits = (image_features @ TEXT_TOKENS.T).softmax(dim=-1)
     probs = logits.cpu().numpy()[0]
 
+# Show top 5
 for label, prob in sorted(zip(LABELS, probs), key=lambda x: x[1], reverse=True)[:5]:
     st.write(f"**{label}** — {prob:.2%}")
