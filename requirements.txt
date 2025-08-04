@@ -3,7 +3,6 @@ torch
 ftfy 
 regex 
 tqdm         
-# dependencies for Clip
 git+https:/github.com/openai/CLIP.git
 openai-clip
 pillow
