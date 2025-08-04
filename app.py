@@ -20,19 +20,14 @@ st.title("📄🔍 Smart PDF/Image Classifier with CLIP")
 st.markdown(f"✅ **NumPy** imported, version: `{np.__version__}`")
 
 # ── 3) Load & cache your hierarchy labels ──
-@st.cache_data
-def load_labels():
-    df = pd.read_csv("hierarchy.csv").fillna("")
-    df["full_label"] = (
-        df["Industry"].astype(str)
-        + " > "
-        + df["Service Category"].astype(str)
-        + " > "
-        + df["Specialization"].astype(str)
-    )
-    return [lbl for lbl in df["full_label"].unique() if lbl.strip()]
-
-LABELS = load_labels()
+uploaded = st.file_uploader(
+    "Upload a PDF or image file",
+    type=["pdf", "png", "jpg", "jpeg"],
+    key="uploader_mixed",
+)
+if not uploaded:
+    st.info("Please upload a PDF or image file to classify.")
+    st.stop()
 
 # ── 4) Load CLIP + tokenize/encode your labels once ──
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
