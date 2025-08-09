@@ -1,0 +1,39 @@
+name: Fetch language flags
+
+on:
+  workflow_dispatch:   # run manually from the Actions tab
+  push:
+    paths:
+      - .github/workflows/fetch-flags.yml
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download SVG flags
+        run: |
+          set -e
+          mkdir -p assets/flags
+          BASE="https://cdn.jsdelivr.net/npm/flag-icons/flags/4x3"
+
+          # map language -> country code to pick the right flag
+          declare -A MAP=(
+            [en]=gb
+            [bg]=bg [hr]=hr [cs]=cz [da]=dk [nl]=nl [et]=ee [fi]=fi
+            [fr]=fr [de]=de [el]=gr [hu]=hu [ga]=ie [it]=it [lv]=lv
+            [lt]=lt [mt]=mt [pl]=pl [pt]=pt [ro]=ro [sk]=sk [sl]=si
+            [es]=es [sv]=se [tr]=tr [ru]=ru [uk]=ua [nb]=no [no]=no
+          )
+
+          for lang in "${!MAP[@]}"; do
+            code="${MAP[$lang]}"
+            curl -fsSL "$BASE/${code}.svg" -o "assets/flags/${lang}.svg"
+          done
+
+      - name: Commit flags
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Add/refresh language flags (SVG)"
+          file_pattern: assets/flags/*.svg
