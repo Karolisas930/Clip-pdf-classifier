@@ -1,0 +1,30 @@
+code,name_en,native_name,flag_emoji,flag_svg,rtl,locales,default_countries,fallback,enabled
+en,English,English,🇬🇧,/flags/gb.svg,False,en-GB|en-US|en-IE|en-MT,GB|IE|MT|US|CA|AU|NZ,,True
+bg,Bulgarian,Български,🇧🇬,/flags/bg.svg,False,bg-BG,BG,en,True
+hr,Croatian,Hrvatski,🇭🇷,/flags/hr.svg,False,hr-HR,HR,en,True
+cs,Czech,Čeština,🇨🇿,/flags/cz.svg,False,cs-CZ,CZ,en,True
+da,Danish,Dansk,🇩🇰,/flags/dk.svg,False,da-DK,DK,en,True
+nl,Dutch,Nederlands,🇳🇱,/flags/nl.svg,False,nl-NL|nl-BE,NL|BE,en,True
+et,Estonian,Eesti,🇪🇪,/flags/ee.svg,False,et-EE,EE,en,True
+fi,Finnish,Suomi,🇫🇮,/flags/fi.svg,False,fi-FI,FI,en,True
+fr,French,Français,🇫🇷,/flags/fr.svg,False,fr-FR|fr-BE|fr-CA,FR|BE|CA,en,True
+de,German,Deutsch,🇩🇪,/flags/de.svg,False,de-DE|de-AT|de-CH,DE|AT|CH,en,True
+el,Greek,Ελληνικά,🇬🇷,/flags/gr.svg,False,el-GR,GR|CY,en,True
+hu,Hungarian,Magyar,🇭🇺,/flags/hu.svg,False,hu-HU,HU,en,True
+ga,Irish,Gaeilge,🇮🇪,/flags/ie.svg,False,ga-IE,IE,en,True
+it,Italian,Italiano,🇮🇹,/flags/it.svg,False,it-IT,IT,en,True
+lv,Latvian,Latviešu,🇱🇻,/flags/lv.svg,False,lv-LV,LV,en,True
+lt,Lithuanian,Lietuvių,🇱🇹,/flags/lt.svg,False,lt-LT,LT,en,True
+mt,Maltese,Malti,🇲🇹,/flags/mt.svg,False,mt-MT,MT,en,True
+pl,Polish,Polski,🇵🇱,/flags/pl.svg,False,pl-PL,PL,en,True
+pt,Portuguese,Português,🇵🇹,/flags/pt.svg,False,pt-PT|pt-BR,PT|BR,en,True
+ro,Romanian,Română,🇷🇴,/flags/ro.svg,False,ro-RO,RO,en,True
+sk,Slovak,Slovenčina,🇸🇰,/flags/sk.svg,False,sk-SK,SK,en,True
+sl,Slovene,Slovenščina,🇸🇮,/flags/si.svg,False,sl-SI,SI,en,True
+es,Spanish,Español,🇪🇸,/flags/es.svg,False,es-ES|es-MX,ES|MX,en,True
+sv,Swedish,Svenska,🇸🇪,/flags/se.svg,False,sv-SE,SE,en,True
+tr,Turkish,Türkçe,🇹🇷,/flags/tr.svg,False,tr-TR,TR,en,True
+ru,Russian,Русский,🇷🇺,/flags/ru.svg,False,ru-RU,RU,en,True
+uk,Ukrainian,Українська,🇺🇦,/flags/ua.svg,False,uk-UA,UA,en,True
+nb,Norwegian Bokmål,Bokmål,🇳🇴,/flags/no.svg,False,nb-NO,NO,en,True
+no,Norwegian,Norsk,🇳🇴,/flags/no.svg,False,no-NO,NO,en,True
