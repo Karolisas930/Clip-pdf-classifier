@@ -4,6 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
+  workflow_dispatch:   # lets you run it manually from the Actions tab
 
 jobs:
   check-icons:
@@ -15,10 +16,20 @@ jobs:
       - name: Run icon checker
         run: python scripts/check_icons.py
 
+      # (optional) produce a flat resolved icon report too
+      - name: Resolve icons (flat report)
+        run: python scripts/resolve_icons.py
+
       - name: Upload icon report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: icon-report
           path: data/icon_report.csv
-          
+
+      - name: Upload resolved icons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: icon-resolved-flat
+          path: data/icon_resolved_flat.csv
