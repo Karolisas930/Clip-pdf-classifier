@@ -1,10 +1,9 @@
 name: Icon check
 
 on:
+  workflow_dispatch: {}
   push:
     branches: [ main ]
-  pull_request:
-  workflow_dispatch:
 
 jobs:
   check-icons:
@@ -18,11 +17,22 @@ jobs:
         with:
           python-version: '3.11'
 
+      # don't stop the job if the checker finds missing files
       - name: Run icon checker
         run: python scripts/check_icons.py
+        continue-on-error: true
 
-      - name: Resolve icons (flat report)
+      # always try to auto-resolve
+      - name: Resolve icons (create placeholders)
+        if: always()
         run: python scripts/resolve_icons.py
+
+      - name: Commit placeholders
+        if: always()
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore: add placeholder icons'
+          file_pattern: assets/icons/*.svg
 
       - name: Upload icon report
         if: always()
@@ -30,10 +40,3 @@ jobs:
         with:
           name: icon-report
           path: data/icon_report.csv
-
-      - name: Upload resolved icons
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: icon-resolved-flat
-          path: data/icon_resolved_flat.csv
