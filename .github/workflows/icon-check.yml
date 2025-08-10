@@ -1,3 +1,12 @@
+- name: Generate flat icon report
+  run: python scripts/resolve_icons.py
+
+- name: Upload icon report
+  uses: actions/upload-artifact@v4
+  with:
+    name: icon-resolved-flat
+    path: data/icon_resolved_flat.csv
+
 name: Icon check
 
 on:
