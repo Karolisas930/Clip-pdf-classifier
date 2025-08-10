@@ -1,16 +1,234 @@
-# scripts/make_json.py
-from pathlib import Path
-import os
-from utils import build_tree_from_disk, to_json
+#!/usr/bin/env python3
+"""
+Build data/taxonomy.json from:
+  data/sections.csv, data/categories.csv, data/subcategories.csv
 
-def main():
-    lang = os.getenv("TAXO_LANG", "en")     # e.g. TAXO_LANG=de python scripts/make_json.py
-    fallback = os.getenv("TAXO_FALLBACK", "en")
-    nodes = build_tree_from_disk("data")
-    out = Path("data/taxonomy.json")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(to_json(nodes, lang=lang, fallback=fallback), encoding="utf-8")
-    print(f"wrote {out.resolve()} (lang={lang}, fallback={fallback})")
+Validates:
+- unique IDs
+- category.section_id exists
+- subcategory.category_id exists
+
+Outputs:
+- data/taxonomy.json  (tree + lookups + labels + paths)
+"""
+
+from __future__ import annotations
+import csv, json, sys
+from pathlib import Path
+from datetime import datetime
+from typing import Dict, List
+
+# --- locations ---
+DATA = Path("data")
+SECTIONS_CSV      = DATA / "sections.csv"
+CATEGORIES_CSV    = DATA / "categories.csv"
+SUBCATEGORIES_CSV = DATA / "subcategories.csv"
+OUT_JSON          = DATA / "taxonomy.json"
+
+# Default icon (used if nothing is set on sub → cat → section)
+DEFAULT_ICON = "assets/icons/default.svg"
+
+# --- helpers ---
+def read_csv(path: Path) -> List[Dict[str, str]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        return [{(k or "").strip(): (v or "").strip() for k, v in row.items()}
+                for row in csv.DictReader(f)]
+
+def detect_langs(fieldnames: List[str]) -> List[str]:
+    # languages are 2-letter codes (en, de, pl…) already in your files
+    langs = [c for c in fieldnames if len(c) == 2 and c.isalpha()]
+    if "en" not in langs:
+        langs.insert(0, "en")
+    # keep English first, then alpha
+    return sorted(set(langs), key=lambda x: (x != "en", x))
+
+def to_int_safe(v: str, default: int = 999999) -> int:
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+def norm_icon(val: str) -> str:
+    v = (val or "").strip()
+    if not v:
+        return ""  # handle inheritance later
+    # Allow either plain filename (recommended) or a path
+    if "/" in v:  # already path-like
+        return v
+    return f"assets/icons/{v}"
+
+def pick_label(row: Dict[str, str], lang: str, fallbacks: List[str]) -> str:
+    # prefer the language column if present and non-empty
+    if lang in row and row[lang]:
+        return row[lang].strip()
+    # then try fallbacks (e.g., section_name_en)
+    for fb in fallbacks:
+        if fb in row and row[fb]:
+            return row[fb].strip()
+    # last: if 'en' present
+    if "en" in row and row["en"]:
+        return row["en"].strip()
+    # finally: any non-id, non-icon text value
+    for k, v in row.items():
+        if k not in {"section_id","category_id","subcategory_id","icon"} and v:
+            return v.strip()
+    return ""
+
+# --- main ---
+def main() -> int:
+    if not (SECTIONS_CSV.exists() and CATEGORIES_CSV.exists() and SUBCATEGORIES_CSV.exists()):
+        print("ERROR: one or more CSVs missing in /data", file=sys.stderr)
+        return 1
+
+    sections   = read_csv(SECTIONS_CSV)
+    categories = read_csv(CATEGORIES_CSV)
+    subs       = read_csv(SUBCATEGORIES_CSV)
+
+    # Detect languages from union of headers
+    header_union = set(sections[0].keys()) | set(categories[0].keys()) | set(subs[0].keys())
+    langs = detect_langs(list(header_union))
+
+    # --- Validations ---
+    sec_ids = [r["section_id"] for r in sections]
+    cat_ids = [r["category_id"] for r in categories]
+    sub_ids = [r["subcategory_id"] for r in subs]
+
+    if len(sec_ids) != len(set(sec_ids)):
+        dupes = {x for x in sec_ids if sec_ids.count(x) > 1}
+        raise SystemExit(f"Duplicate section_id(s): {sorted(dupes)}")
+    if len(cat_ids) != len(set(cat_ids)):
+        dupes = {x for x in cat_ids if cat_ids.count(x) > 1}
+        raise SystemExit(f"Duplicate category_id(s): {sorted(dupes)}")
+    if len(sub_ids) != len(set(sub_ids)):
+        dupes = {x for x in sub_ids if sub_ids.count(x) > 1}
+        raise SystemExit(f"Duplicate subcategory_id(s): {sorted(dupes)}")
+
+    sec_set = set(sec_ids)
+    for r in categories:
+        if r["section_id"] not in sec_set:
+            raise SystemExit(f"FK error: category {r['category_id']} → section_id {r['section_id']} not found")
+
+    cat_set = set(cat_ids)
+    for r in subs:
+        if r["category_id"] not in cat_set:
+            raise SystemExit(f"FK error: subcategory {r['subcategory_id']} → category_id {r['category_id']} not found")
+
+    # --- Index by parent ---
+    cats_by_sec: Dict[str, List[Dict]] = {}
+    for c in categories:
+        cats_by_sec.setdefault(c["section_id"], []).append(c)
+
+    subs_by_cat: Dict[str, List[Dict]] = {}
+    for s in subs:
+        subs_by_cat.setdefault(s["category_id"], []).append(s)
+
+    # --- Sort helpers ---
+    def sec_key(r: Dict) -> tuple:
+        return (to_int_safe(r.get("sort_order_section","")), pick_label(r, "en", ["section_name_en"]))
+    def cat_key(r: Dict) -> tuple:
+        return (to_int_safe(r.get("sort_order_category","")), pick_label(r, "en", ["category_name_en"]))
+    def sub_key(r: Dict) -> tuple:
+        return (to_int_safe(r.get("sort_order_subcategory","")), pick_label(r, "en", ["subcategory_name_en"]))
+
+    # --- Build tree with icon inheritance ---
+    # Pre-normalize icons at row level (filenames -> paths)
+    for r in sections:
+        r["icon"] = norm_icon(r.get("icon",""))
+    for r in categories:
+        r["icon"] = norm_icon(r.get("icon",""))
+    for r in subs:
+        r["icon"] = norm_icon(r.get("icon",""))
+
+    tree: List[Dict] = []
+    id_lookup: Dict[str, Dict] = {"sections": {}, "categories": {}, "subcategories": {}}
+    paths: Dict[str, Dict] = {}  # sub_id -> {section_id, category_id}
+    labels_by_lang: Dict[str, Dict[str, str]] = {lc: {} for lc in langs}
+
+    for s in sorted(sections, key=sec_key):
+        s_icon = s.get("icon") or ""
+        sec_node = {
+            "id": s["section_id"],
+            "type": "section",
+            "icon": s_icon or DEFAULT_ICON,
+            "labels": {lc: pick_label(s, lc, ["section_name_en"]) for lc in langs},
+            "children": []
+        }
+        id_lookup["sections"][s["section_id"]] = {
+            "icon": sec_node["icon"],
+            "labels": sec_node["labels"],
+            "sort": to_int_safe(s.get("sort_order_section",""))
+        }
+        for lc, lbl in sec_node["labels"].items():
+            if lbl:
+                labels_by_lang[lc][s["section_id"]] = lbl
+
+        for c in sorted(cats_by_sec.get(s["section_id"], []), key=cat_key):
+            c_icon = c.get("icon") or s_icon
+            cat_node = {
+                "id": c["category_id"],
+                "type": "category",
+                "icon": c_icon or DEFAULT_ICON,
+                "labels": {lc: pick_label(c, lc, ["category_name_en"]) for lc in langs},
+                "children": []
+            }
+            id_lookup["categories"][c["category_id"]] = {
+                "section_id": s["section_id"],
+                "icon": cat_node["icon"],
+                "labels": cat_node["labels"],
+                "sort": to_int_safe(c.get("sort_order_category",""))
+            }
+            for lc, lbl in cat_node["labels"].items():
+                if lbl:
+                    labels_by_lang[lc][c["category_id"]] = lbl
+
+            for g in sorted(subs_by_cat.get(c["category_id"], []), key=sub_key):
+                g_icon = g.get("icon") or c_icon or s_icon
+                sub_node = {
+                    "id": g["subcategory_id"],
+                    "type": "subcategory",
+                    "icon": g_icon or DEFAULT_ICON,
+                    "labels": {lc: pick_label(g, lc, ["subcategory_name_en"]) for lc in langs},
+                    "children": []
+                }
+                cat_node["children"].append(sub_node)
+                id_lookup["subcategories"][g["subcategory_id"]] = {
+                    "section_id": s["section_id"],
+                    "category_id": c["category_id"],
+                    "icon": sub_node["icon"],
+                    "labels": sub_node["labels"],
+                    "sort": to_int_safe(g.get("sort_order_subcategory",""))
+                }
+                for lc, lbl in sub_node["labels"].items():
+                    if lbl:
+                        labels_by_lang[lc][g["subcategory_id"]] = lbl
+                paths[g["subcategory_id"]] = {
+                    "section_id": s["section_id"],
+                    "category_id": c["category_id"]
+                }
+
+            sec_node["children"].append(cat_node)
+        tree.append(sec_node)
+
+    payload = {
+        "meta": {
+            "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "languages": langs,
+            "counts": {
+                "sections": len(sections),
+                "categories": len(categories),
+                "subcategories": len(subs)
+            },
+            "defaults": {"icon": DEFAULT_ICON}
+        },
+        "tree": tree,
+        "id_lookup": id_lookup,
+        "labels": labels_by_lang,
+        "paths": paths
+    }
+
+    OUT_JSON.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"OK  wrote {OUT_JSON}  (sections:{len(sections)}  categories:{len(categories)}  subcategories:{len(subs)})")
+    return 0
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
