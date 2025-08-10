@@ -1,16 +1,7 @@
-- name: Generate flat icon report
-  run: python scripts/resolve_icons.py
-
-- name: Upload icon report
-  uses: actions/upload-artifact@v4
-  with:
-    name: icon-resolved-flat
-    path: data/icon_resolved_flat.csv
-
 name: Icon check
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
   push:
     branches: [ main ]
 
@@ -26,26 +17,33 @@ jobs:
         with:
           python-version: '3.11'
 
-      # don't stop the job if the checker finds missing files
-      - name: Run icon checker
-        run: python scripts/check_icons.py
-        continue-on-error: true
-
-      # always try to auto-resolve
-      - name: Resolve icons (create placeholders)
-        if: always()
+      - name: Generate flat icon report
         run: python scripts/resolve_icons.py
 
-      - name: Commit placeholders
-        if: always()
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: 'chore: add placeholder icons'
-          file_pattern: assets/icons/*.svg
+      - name: Check that icon files exist
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import csv, sys
+          icons_dir = Path("assets/icons")
+          need = set()
+          for p in ["data/sections.csv","data/categories.csv","data/subcategories.csv"]:
+              with open(p, encoding="utf-8-sig", newline="") as f:
+                  for r in csv.DictReader(f):
+                      v = (r.get("icon") or "").strip()
+                      if v:
+                          need.add(v.split("/")[-1])
+          missing = [n for n in sorted(need) if not (icons_dir/n).exists()]
+          if missing:
+              print("Missing icons:")
+              for m in missing: print(m)
+              sys.exit(1)
+          print("All icons present.")
+          PY
 
       - name: Upload icon report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: icon-report
-          path: data/icon_report.csv
+          name: icon-resolved-flat
+          path: data/icon_resolved_flat.csv
