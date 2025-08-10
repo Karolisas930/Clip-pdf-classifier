@@ -10,3 +10,4 @@ pytesseract
 PyMuPDF
 pandas
 scikit-learn
+sentence-transformers
