@@ -11,4 +11,4 @@ PyMuPDF
 pandas
 scikit-learn
 sentence-transformers
-commit + push
+commit+push
