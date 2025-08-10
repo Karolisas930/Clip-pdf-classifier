@@ -1,22 +1,23 @@
-# --- app + UI ---
-streamlit>=1.36
-requests>=2.32
+--extra-index-url https://download.pytorch.org/whl/cpu
 
-# --- CLIP + ML stack ---
-torch>=2.2,<2.4           # CPU wheels; adjust if you have CUDA
-torchvision>=0.17,<0.19
-openai-clip>=1.0          # provides `import clip`
-ftfy>=6.1
-regex>=2024.5
-tqdm>=4.66
-sentence-transformers>=3.0
+# --- app + http ---
+streamlit==1.36.0
+requests>=2.32.0
+
+# --- CLIP + ML ---
+torch==2.2.2
+torchvision==0.17.2
+openai-clip==1.0.1
+ftfy==6.1.1
+regex==2024.5.15
+tqdm==4.66.4
+sentence-transformers==2.7.0
 
 # --- OCR / PDF / data ---
-pillow>=10.3
-numpy>=1.26
-pandas>=2.2
-PyMuPDF>=1.24             # import fitz
-pytesseract>=0.3.10
+numpy==1.26.4
+pillow==10.3.0
+pymupdf==1.24.10
+pytesseract==0.3.10
 
-# --- optional, only if you really use it in code ---
-scikit-learn>=1.4
+# optional; only if you really use it
+# scikit-learn==1.4.2
