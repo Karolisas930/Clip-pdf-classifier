@@ -1,13 +1,10 @@
-- uses: actions/setup-python@v5
-  with:
-    python-version: '3.11'
 name: Icon check
 
 on:
   push:
     branches: [ main ]
   pull_request:
-  workflow_dispatch:   # lets you run it manually from the Actions tab
+  workflow_dispatch:
 
 jobs:
   check-icons:
@@ -16,10 +13,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Run icon checker
         run: python scripts/check_icons.py
 
-      # (optional) produce a flat resolved icon report too
       - name: Resolve icons (flat report)
         run: python scripts/resolve_icons.py
 
