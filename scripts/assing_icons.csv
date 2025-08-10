@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""
+Assign smarter icons to sections/categories/subcategories by matching keywords
+in the English labels. Writes updated CSVs and a small report of rows we
+couldn't confidently match.
+
+Usage:
+  python scripts/assign_icons.py --data data --out data --overwrite
+"""
+from __future__ import annotations
+import re, csv, argparse
+from pathlib import Path
+from typing import Dict, List
+
+# Rules: first regex that matches wins -> icon filename
+ICON_RULES: List[tuple[str, str]] = [
+    (r"green|sustainab|renew|climate|environment|eco", "leaf.svg"),
+    (r"solar|photovoltaic", "sun.svg"),
+    (r"wind", "wind.svg"),
+    (r"health|wellness|fitness", "heart.svg"),
+    (r"biotech|genom|pharma|lab|laborator|medical|clinic", "dna.svg"),
+    (r"hospital|care", "cross.svg"),
+    (r"finance|bank|loan|credit|invest|capital|fintech", "bank.svg"),
+    (r"insur", "umbrella.svg"),
+    (r"educat|school|univers|training|course|learning", "book.svg"),
+    (r"\b(it|software|app|saas|platform|dev|developer|code)\b", "code.svg"),
+    (r"\b(ai|machine learning|ml|vision)\b", "spark.svg"),
+    (r"data|analytics|warehouse|database", "database.svg"),
+    (r"security|cyber|privacy|iam|compliance", "shield.svg"),
+    (r"retail|e-?commerce|shop|store|marketplace", "cart.svg"),
+    (r"marketing|advertis|adtech|seo|brand", "megaphone.svg"),
+    (r"logistic|shipping|delivery|fulfillment|supply|warehouse", "truck.svg"),
+    (r"transport|mobility|ride|bus|rail|train|aviation|airline", "plane.svg"),
+    (r"travel|tour|hotel|hospitality|booking", "plane.svg"),
+    (r"restaurant|food|beverage|cafe|catering", "cutlery.svg"),
+    (r"agri|farm|agricult|crop|livestock", "tractor.svg"),
+    (r"real estate|property|housing|construct|build", "building.svg"),
+    (r"legal|law|attorney|contract|regulation", "scales.svg"),
+    (r"hr|recruit|talent|people|payroll", "users.svg"),
+    (r"gaming|game|esports", "controller.svg"),
+    (r"media|music|video|streaming|content|news|press", "play.svg"),
+    (r"sport|gym|yoga|fitness", "dumbbell.svg"),
+    (r"nonprofit|charity|ngo|foundation", "hands.svg"),
+    (r"marketplace|commerce|sales|pos|point of sale", "tag.svg"),
+]
+
+DEFAULT_ICON = "default.svg"
+
+def pick_icon(text: str, current: str = "") -> str:
+    """Return an icon filename for given label text. If `current` is already an icon
+    and not a generic placeholder, keep it."""
+    generic = {"", "house.svg", "flower.svg", "default.svg"}
+    if current and current not in generic:
+        return current
+    t = text.lower()
+    for pattern, icon in ICON_RULES:
+        if re.search(pattern, t):
+            return icon
+    return DEFAULT_ICON
+
+def read_csv(path: Path) -> List[dict]:
+    with path.open("r", encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
+
+def write_csv(path: Path, rows: List[dict]):
+    if not rows:
+        return
+    fieldnames = list(rows[0].keys())
+    with path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+
+def choose_label(row: dict) -> str:
+    # Try common columns used in your repo; fall back to 'en' or any non-id value
+    for col in ("section_name_en","category_name_en","subcategory_name_en","en","label","name"):
+        if col in row and row[col]:
+            return str(row[col])
+    for k, v in row.items():
+        if k not in ("section_id","category_id","subcategory_id","icon","sort_order_section","sort_order_category","sort_order_subcategory") and v:
+            return str(v)
+    return ""
+
+def process_table(rows: List[dict]) -> tuple[List[dict], List[dict]]:
+    updated, unmatched = [], []
+    for r in rows:
+        label = choose_label(r)
+        old_icon = r.get("icon","")
+        new_icon = pick_icon(label, old_icon)
+        r = {**r, "icon": new_icon}
+        updated.append(r)
+        if new_icon == DEFAULT_ICON:
+            unmatched.append({"id": r.get("section_id") or r.get("category_id") or r.get("subcategory_id"),
+                              "label": label})
+    return updated, unmatched
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", default="data", help="directory with sections.csv, categories.csv, subcategories.csv")
+    ap.add_argument("--out", default=None, help="output dir (defaults to --data)")
+    ap.add_argument("--overwrite", action="store_true", help="overwrite the original CSVs instead of writing *_with_icons.csv")
+    args = ap.parse_args()
+
+    data_dir = Path(args.data)
+    out_dir  = Path(args.out or args.data)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    files = {
+        "sections": data_dir / "sections.csv",
+        "categories": data_dir / "categories.csv",
+        "subcategories": data_dir / "subcategories.csv",
+    }
+
+    total_unmatched = []
+    for key, path in files.items():
+        if not path.exists():
+            print(f"[skip] {path} not found")
+            continue
+        rows = read_csv(path)
+        upd, unm = process_table(rows)
+        total_unmatched.extend([{"table": key, **u} for u in unm])
+        if args.overwrite:
+            out_path = out_dir / path.name
+        else:
+            out_path = out_dir / (path.stem + "_with_icons.csv")
+        write_csv(out_path, upd)
+        print(f"[ok] wrote {out_path} ({len(upd)} rows)")
+
+    # unmatched report
+    report = out_dir / "icon_unmatched.csv"
+    write_csv(report, total_unmatched)
+    print(f"[info] unmatched report: {report} ({len(total_unmatched)} rows)")
+
+if __name__ == "__main__":
+    main()
