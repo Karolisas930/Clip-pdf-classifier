@@ -1,4 +1,7 @@
 import os
+import json
+from pathlib import Path
+
 import streamlit as st
 import torch
 import clip
@@ -10,7 +13,7 @@ from ocr_utils import extract_text_from_image
 
 # ─── 1) Page config & title ────────────────────────────────────────────────────
 st.set_page_config(page_title="Smart PDF/Image Classifier", layout="wide")
-st.title("📄🔍 Smart PDF/Image Classifier with CLIP")
+st.title("📄🔍 Smart PDF/Image Classifier")
 
 # ─── 2) Sanity check NumPy import ─────────────────────────────────────────────
 st.markdown(f"✅ **NumPy** imported, version: {np.__version__}")
@@ -77,22 +80,58 @@ st.image(image_path, caption="Preview", use_container_width=True)
 st.subheader("📝 Extracted OCR Text")
 st.write(extract_text_from_image(image_path))
 
-# ─── 6) Load & cache your labels from hierarchy.csv ───────────────────────────
+# ─── 6) Load taxonomy.json (IDs + localized labels) ───────────────────────────
 @st.cache_data
-def load_labels():
-    df = pd.read_csv("hierarchy.csv").fillna("")
-    df["full_label"] = (
-        df["Industry"].astype(str)
-        + " > " + df["Service Category"].astype(str)
-        + " > " + df["Specialization"].astype(str)
-    )
-    return [lbl for lbl in df["full_label"].unique() if lbl.strip()]
+def load_taxonomy(lang: str = "en"):
+    p = Path("data/taxonomy.json")
+    if not p.exists():
+        st.error("data/taxonomy.json not found. Run your GitHub Action (make_json.py) or place the file locally.")
+        st.stop()
 
-LABELS = load_labels()
-LABEL_EMBS = build_label_embeddings(LABELS)  # <— text matcher cache
+    data = json.loads(p.read_text(encoding="utf-8"))
+    labels_map = data["labels"].get(lang, data["labels"].get("en", {}))  # id -> localized label
+    tree = data["tree"]  # list of sections with children
 
-with st.expander("Debug: first 10 labels"):
-    for s in LABELS[:10]:
+    # Build leaf prompts (breadcrumbs) + parallel arrays of sub IDs and paths
+    prompts: list[str] = []
+    sub_ids: list[str] = []
+    paths: dict[str, dict] = data.get("paths", {})  # sub_id -> {section_id, category_id}
+
+    def label_for(_id: str) -> str:
+        return labels_map.get(_id, _id)
+
+    def walk_section(sec: dict):
+        sec_id = sec["id"]
+        for cat in sec.get("children", []):
+            cat_id = cat["id"]
+            for sub in cat.get("children", []):
+                sub_id = sub["id"]
+                crumb = " > ".join([label_for(sec_id), label_for(cat_id), label_for(sub_id)])
+                prompts.append(crumb)
+                sub_ids.append(sub_id)
+
+    for s in tree:
+        walk_section(s)
+
+    return {
+        "prompts": prompts,       # breadcrumb texts for CLIP & text matcher
+        "sub_ids": sub_ids,       # subcategory IDs in the same order as prompts
+        "labels_map": labels_map, # id -> localized label
+        "paths": paths            # sub_id -> {section_id, category_id}
+    }
+
+LANG = st.selectbox("🌐 Language for labels", ["en","de","pl","tr","uk","ru","nl","fr","es","it"], index=0)
+TX = load_taxonomy(LANG)
+PROMPTS = TX["prompts"]
+SUB_IDS  = TX["sub_ids"]
+LABELS_MAP = TX["labels_map"]
+PATHS = TX["paths"]
+
+# Build text-embedding cache for prompts
+LABEL_EMBS = build_label_embeddings(PROMPTS)
+
+with st.expander("Debug: first 10 prompts"):
+    for s in PROMPTS[:10]:
         st.write("•", s)
 
 # ─── 7) Combined classification (image + text) ────────────────────────────────
@@ -110,16 +149,16 @@ with c3:
     tau = st.slider("Temperature (sharper → lower)", 0.02, 0.20, 0.07, 0.01)
 
 if st.button("▶️ Run classification"):
-    # 1) CLIP image → probs
+    # 1) CLIP image → probs over PROMPTS
     model, preprocess, device = load_clip()
     img_tensor = preprocess(Image.open(image_path)).unsqueeze(0).to(device)
-    text_tokens = clip.tokenize(LABELS, truncate=True).to(device)
+    text_tokens = clip.tokenize(PROMPTS, truncate=True).to(device)
     with torch.inference_mode():
         img_feats = model.encode_image(img_tensor)
         txt_feats = model.encode_text(text_tokens)
         probs_img = (img_feats @ txt_feats.T).softmax(dim=-1)[0].cpu().numpy()
 
-    # 2) Text → probs
+    # 2) Text → probs over PROMPTS
     probs_txt = text_to_probs(job_text or "", LABEL_EMBS, tau=tau)
 
     # 3) Combine (robust weighted geometric mean)
@@ -139,15 +178,23 @@ if st.button("▶️ Run classification"):
     st.subheader(f"🔮 Top suggestions — {used}")
     topk = 5
     idxs = np.argsort(-combined)[:topk]
+
     for i in idxs:
-        st.write(f"**{LABELS[i]}** — {combined[i]:.1%}")
+        st.write(f"**{PROMPTS[i]}** — {combined[i]:.1%}")
 
     choice = st.radio(
         "✅ Confirm the best match",
         options=list(idxs),
-        format_func=lambda i: f"{LABELS[i]} — {combined[i]:.1%}"
+        format_func=lambda i: f"{PROMPTS[i]} — {combined[i]:.1%}"
     )
 
     if st.button("Save selection"):
-        # TODO: map LABELS[choice] back to your IDs if you store IDs separately
-        st.success(f"Saved: {LABELS[choice]}")
+        sub_id = SUB_IDS[choice]
+        path = PATHS.get(sub_id, {})
+        sec_id = path.get("section_id", "")
+        cat_id = path.get("category_id", "")
+        # TODO: send {section_id, category_id, subcategory_id} to Airtable/DB
+        st.success(
+            f"Saved IDs → section: {sec_id} / category: {cat_id} / subcategory: {sub_id}\n\n"
+            f"Label: {PROMPTS[choice]}"
+        )
