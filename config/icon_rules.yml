@@ -1,0 +1,89 @@
+# Fallback if nothing matches
+default: default.svg
+
+# Map keywords in your section/category/subcategory names -> icon filename in assets/icons/
+# (All comparisons are case-insensitive "contains".)
+rules:
+  # --- Energy / Sustainability ---
+  leaf.svg:          [green energy, sustainability, sustainable, eco, climate, environment, conservation]
+  recycle.svg:       [recycle, recycling, circular, waste, compost]
+  sun.svg:           [solar, photovoltaic, pv]
+  wind.svg:          [wind, turbine]
+  water.svg:         [hydro, hydropower, desalination, wastewater, water]
+  flame.svg:         [gas, oil, petroleum]
+  plug.svg:          [electric, ev, charging, charger, battery, storage, grid]
+
+  # --- Health / Bio / Wellness ---
+  heart.svg:         [health, wellness, wellbeing, fitness, gym, nutrition, mental health]
+  stethoscope.svg:   [clinic, primary care, physician, doctor, telemedicine]
+  pill.svg:          [pharma, pharmacy, medication, drug]
+  dna.svg:           [biotech, biotechnology, genomics, laboratory, lab, research, life science]
+  wheelchair.svg:    [rehab, disability, assistive]
+  baby.svg:          [maternity, neonatal, pediatric]
+
+  # --- Finance / Insurance ---
+  bank.svg:          [bank, banking, credit union]
+  credit-card.svg:   [payment, payments, card, checkout, wallet, fintech]
+  chart.svg:         [investment, investing, portfolio, asset management, brokerage, trading, esg finance]
+  shield-dollar.svg: [insurance, insure, policy, premium, claim, risk]
+
+  # --- Government / Legal / Civic ---
+  courthouse.svg:    [government, public service, civic, municipality, council]
+  scale.svg:         [legal, law, compliance, regulation, regulatory, lawsuit]
+  id-card.svg:       [identity, passport, immigration, license, certification, kyc, onboarding]
+  ballot.svg:        [election, voting]
+
+  # --- Education / Culture ---
+  graduation.svg:    [education, school, university, college, training, learning, course]
+  book.svg:          [library, books, publishing, textbook]
+  museum.svg:        [museum, culture, heritage, arts]
+
+  # --- Real Estate / Construction / Home Services ---
+  house.svg:         [real estate, property, housing, mortgage, home]
+  blueprint.svg:     [architecture, planning, urban, design]
+  construction.svg:  [construction, contractor, building, remodel, renovation]
+  wrench.svg:        [repair, maintenance, plumbing, electrician, hvac, handyman]
+  key.svg:           [rental, leasing]
+
+  # --- Retail / Food / Hospitality / Travel ---
+  cart.svg:          [retail, shop, store, marketplace, ecommerce]
+  tag.svg:           [fashion, apparel, clothing, shoes, accessories]
+  fork-knife.svg:    [restaurant, food, dining, catering, grocery, kitchen]
+  bed.svg:           [hotel, hospitality, accommodation, lodging]
+  plane.svg:         [travel, tourism, airline, airport]
+  truck.svg:         [logistics, shipping, delivery, freight, supply chain]
+
+  # --- Transportation / Mobility ---
+  car.svg:           [automotive, vehicle, mobility, ride, taxi, rideshare]
+  bus.svg:           [public transit, bus, metro, subway, rail]
+
+  # --- Tech / Software / Data / Security ---
+  code.svg:          [software, developer, programming, app, application, dev]
+  cloud.svg:         [cloud, saas, paas, iaas]
+  database.svg:      [data, analytics, warehouse, lake, big data, ai data]
+  brain.svg:         [ai, ml, machine learning, llm, model, neural]
+  server.svg:        [infrastructure, devops, platform]
+  shield.svg:        [security, cybersecurity, privacy, zero trust, iam, iam/iam]
+  bug.svg:           [testing, qa, bug, quality assurance]
+
+  # --- Media / Entertainment / Sports / Gaming ---
+  camera.svg:        [media, photo, video, film, production, studio, creator]
+  music.svg:         [music, audio, podcast, streaming]
+  trophy.svg:        [sports, fitness event, athletics, tournament]
+  gamepad.svg:       [gaming, esports]
+
+  # --- Agriculture / Natural Resources / Manufacturing ---
+  wheat.svg:         [agriculture, farming, agtech, crop, livestock, dairy]
+  factory.svg:       [manufacturing, industrial, plant, production]
+  pickaxe.svg:       [mining, minerals]
+
+  # --- Community / Social / Charity / HR ---
+  users.svg:         [community, social, network, membership]
+  handshake.svg:     [partnership, b2b services, consulting, professional services]
+  charity.svg:       [charity, ngo, nonprofit, foundation]
+  briefcase.svg:     [hr, recruiting, jobs, employment, staffing]
+
+  # --- Utilities / Bills / Weather ---
+  bolt.svg:          [utilities, electricity, power bill]
+  droplet.svg:       [water bill, sanitation utility]
+  cloud-sun.svg:     [weather, meteorology, climate data]
