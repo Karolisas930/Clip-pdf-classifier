@@ -52,8 +52,7 @@ with st.sidebar:
     default_idx = langs.index("en") if "en" in langs else 0
     lang = st.selectbox("Label language", options=langs, index=default_idx)
     last_gen = taxo.get("meta", {}).get("generated_at", "")
-    if last_gen:
-    st.caption(f"Generated: {last_gen}")
+    if last_gen:st.caption(f"Generated: {last_gen}")
 
 LABELS = build_labels_from_taxonomy(taxo, lang=lang)
 st.write(f"✅ Loaded **{len(LABELS)}** labels from taxonomy ({lang.upper()}).")
