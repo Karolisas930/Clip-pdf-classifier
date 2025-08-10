@@ -1,0 +1,46 @@
+name: Fill missing icons
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+
+      - name: Create placeholder icons from default.svg
+        id: gen
+        run: |
+          python - <<'PY'
+          import csv, os, pathlib, shutil
+          csvs = ['data/sections.csv','data/categories.csv','data/subcategories.csv']
+          icons=set()
+          for p in csvs:
+              if not os.path.exists(p): continue
+              with open(p, encoding='utf-8-sig', newline='') as f:
+                  for row in csv.DictReader(f):
+                      v=(row.get('icon') or '').strip()
+                      if not v: continue
+                      fn=v.split('/')[-1]
+                      icons.add(fn)
+          base=pathlib.Path('assets/icons'); base.mkdir(parents=True, exist_ok=True)
+          missing=[]
+          for fn in sorted(icons):
+              if not (base/fn).exists():
+                  shutil.copy(base/'default.svg', base/fn)
+                  missing.append(fn)
+          pathlib.Path('data/missing_icons.txt').write_text('\n'.join(missing), encoding='utf-8')
+          print(f'Created {len(missing)} placeholder icons')
+          PY
+
+      - name: Commit placeholders
+        if: hashFiles('data/missing_icons.txt') != ''
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore: add placeholder icons'
+          file_pattern: |
+            assets/icons/*.svg
+            data/missing_icons.txt
