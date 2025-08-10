@@ -1,12 +1,22 @@
-
-name: Build taxonomy
+name: Build taxonomy & publish
 
 on:
   push:
+    branches: [ main ]
     paths:
       - 'data/**'
-      - 'scripts/**'
+      - 'scripts/make_json.py'
+      - '.github/workflows/hierarchy.yml'
   workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -14,29 +24,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install pandas openpyxl
-
-      - name: Generate CSVs from masters
-        run: python scripts/validate_and_emit.py
-
       - name: Build taxonomy.json
-        run: python scripts/make_json.py
+        run: |
+          python scripts/make_json.py
+          mkdir -p _site/data
+          cp data/taxonomy.json _site/data/
+          # (optional) expose the raw CSVs too:
+          cp data/sections.csv _site/data/ || true
+          cp data/categories.csv _site/data/ || true
+          cp data/subcategories.csv _site/data/ || true
 
-      - name: Commit generated data
-        uses: stefanzweifel/git-auto-commit-action@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          commit_message: "chore(data): regenerate CSVs + taxonomy.json"
-          file_pattern: |
-            data/sections.csv
-            data/categories.csv
-            data/subcategories.csv
-            data/taxonomy.json
-            
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
