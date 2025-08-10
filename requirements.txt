@@ -1,14 +1,22 @@
-streamlit
-torch
-ftfy 
-regex 
-tqdm         
-openai-clip
-pillow
-numpy
-pytesseract
-PyMuPDF
-pandas
-scikit-learn
-sentence-transformers
-(commit + push)
+# --- app + UI ---
+streamlit>=1.36
+requests>=2.32
+
+# --- CLIP + ML stack ---
+torch>=2.2,<2.4           # CPU wheels; adjust if you have CUDA
+torchvision>=0.17,<0.19
+openai-clip>=1.0          # provides `import clip`
+ftfy>=6.1
+regex>=2024.5
+tqdm>=4.66
+sentence-transformers>=3.0
+
+# --- OCR / PDF / data ---
+pillow>=10.3
+numpy>=1.26
+pandas>=2.2
+PyMuPDF>=1.24             # import fitz
+pytesseract>=0.3.10
+
+# --- optional, only if you really use it in code ---
+scikit-learn>=1.4
