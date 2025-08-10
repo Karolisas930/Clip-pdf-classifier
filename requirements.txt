@@ -1,16 +1,14 @@
-# --- app / http ---
 streamlit==1.36.0
 requests==2.32.3
 
-# --- CLIP + deps (CPU) ---
-torch==2.3.1
-torchvision==0.18.1
+torch==2.8.0
+torchvision==0.23.0
+
 ftfy==6.2.0
 regex==2024.5.15
 tqdm==4.66.4
 clip @ git+https://github.com/openai/CLIP.git
 
-# --- OCR/PDF/data (no native tesseract) ---
 pillow==10.3.0
 numpy==1.26.4
 pandas==2.2.2
