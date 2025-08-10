@@ -1,23 +1,17 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-
-# --- app + http ---
+# --- app / http ---
 streamlit==1.36.0
-requests>=2.32.0
+requests==2.32.3
 
-# --- CLIP + ML ---
-torch==2.2.2
-torchvision==0.17.2
-openai-clip==1.0.1
-ftfy==6.1.1
+# --- CLIP + deps (CPU) ---
+torch==2.3.1
+torchvision==0.18.1
+ftfy==6.2.0
 regex==2024.5.15
 tqdm==4.66.4
-sentence-transformers==2.7.0
+clip @ git+https://github.com/openai/CLIP.git
 
-# --- OCR / PDF / data ---
-numpy==1.26.4
+# --- OCR/PDF/data (no native tesseract) ---
 pillow==10.3.0
-pymupdf==1.24.10
-pytesseract==0.3.10
-
-# optional; only if you really use it
-# scikit-learn==1.4.2
+numpy==1.26.4
+pandas==2.2.2
+PyMuPDF==1.24.9
