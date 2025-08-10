@@ -30,9 +30,16 @@ DEFAULT_ICON = "assets/icons/default.svg"
 
 # --- helpers ---
 def read_csv(path: Path) -> List[Dict[str, str]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as f:
-        return [{(k or "").strip(): (v or "").strip() for k, v in row.items()}
-                for row in csv.DictReader(f)]
+    """Read CSV with a few common encodings to avoid UnicodeDecodeError."""
+    encodings = ("utf-8-sig", "utf-8", "cp1252", "latin-1")
+    for enc in encodings:
+        try:
+            with path.open("r", encoding=enc, newline="") as f:
+                reader = csv.DictReader(f)
+                return [{(k or "").strip(): (v or "").strip() for k, v in row.items()} for row in reader]
+        except UnicodeDecodeError:
+            continue
+    raise SystemExit(f"Could not decode {path}. Please re-save as UTF-8 (UTF-8 with BOM also OK).")
 
 def detect_langs(fieldnames: List[str]) -> List[str]:
     # languages are 2-letter codes (en, de, pl…) already in your files
