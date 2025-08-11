@@ -2,7 +2,9 @@
 # Smart PDF/Image classifier with CLIP + optional OCR + taxonomy from GitHub Pages
 
 import os
+import hashlib
 from io import BytesIO
+from typing import List
 
 import numpy as np
 import requests
@@ -44,10 +46,10 @@ def _label_for(node: dict, taxo: dict, lang: str = "en") -> str:
             return (node["labels"][lc] or "").strip()
     return ""
 
-def build_labels_from_taxonomy(taxo: dict, lang: str = "en") -> list[str]:
-    labels: list[str] = []
+def build_labels_from_taxonomy(taxo: dict, lang: str = "en") -> List[str]:
+    labels: List[str] = []
 
-    def walk(node: dict, crumbs: list[str]) -> None:
+    def walk(node: dict, crumbs: List[str]) -> None:
         name = _label_for(node, taxo, lang)
         here = crumbs + ([name] if name else [])
         if node.get("type") == "subcategory":
@@ -151,38 +153,66 @@ with col2:
     st.write(run_ocr_safe(preview_img))
 
 
-# ─────────────────────── CLIP model + scoring ─────────────────────────
+# ─────────────────────── CLIP model + caching ─────────────────────────
+MODEL_NAME = "ViT-B/32"
+
 @st.cache_resource(show_spinner=False)
-def load_clip(device: str = "cpu"):
-    model, preprocess = clip.load("ViT-B/32", device=device)
+def load_clip(model_name: str, device: str = "cpu"):
+    model, preprocess = clip.load(model_name, device=device)
+    model.eval()
     return model, preprocess
 
-def clip_scores(image_pil: Image.Image, labels: list[str], model, preprocess, device: str, batch_size: int = 256) -> np.ndarray:
-    img_tensor = preprocess(image_pil).unsqueeze(0).to(device)
+def _labels_signature(labels: List[str], language: str, model_name: str) -> str:
+    """Compact signature so text features get cached per language + model + labels."""
+    m = hashlib.md5()
+    m.update(model_name.encode()); m.update(b"|"); m.update(language.encode()); m.update(b"|")
+    for s in labels:
+        m.update(s.encode()); m.update(b"\0")
+    return m.hexdigest()
+
+@st.cache_resource(show_spinner=False)
+def cached_text_features(
+    signature: str,
+    labels: List[str],
+    model_name: str,
+    device: str,
+    batch_size: int = 256,
+) -> torch.Tensor:
+    """Compute & cache normalized text features (CPU tensor) for given labels."""
+    model, _ = load_clip(model_name, device)
+    feats = []
     with torch.no_grad():
-        image_features = model.encode_image(img_tensor)
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        scores: list[float] = []
         for i in range(0, len(labels), batch_size):
-            batch = labels[i : i + batch_size]
+            batch = labels[i:i + batch_size]
             tokens = clip.tokenize(batch, truncate=True).to(device)
-            text_features = model.encode_text(tokens)
-            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-            sims = (image_features @ text_features.T).cpu().numpy()[0].tolist()
-            scores.extend(sims)
-    scores_arr = np.asarray(scores, dtype=np.float32)
-    exps = np.exp(scores_arr - scores_arr.max())  # stable softmax
-    return exps / exps.sum()
+            txt = model.encode_text(tokens)
+            txt = txt / txt.norm(dim=-1, keepdim=True)
+            feats.append(txt.cpu())
+    return torch.cat(feats, dim=0)  # (N, D) on CPU
+
+
+def classify_image(preview_img: Image.Image, labels: List[str], language: str) -> np.ndarray:
+    """Return softmax probabilities over labels using cached text embeddings."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = load_clip(MODEL_NAME, device)
+
+    sig = _labels_signature(labels, language, MODEL_NAME)
+    text_feats_cpu = cached_text_features(sig, labels, MODEL_NAME, device)
+
+    with torch.no_grad():
+        img = preprocess(preview_img).unsqueeze(0).to(device)
+        img_feat = model.encode_image(img)
+        img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
+
+        tf = text_feats_cpu.to(device)
+        sims = (img_feat @ tf.T).softmax(dim=-1).cpu().numpy()[0]
+    return sims
 
 
 # ─────────────────────────── Run classification ───────────────────────
 if st.button("▶️ Run CLIP classification"):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    with st.spinner(f"Loading CLIP on {device}…"):
-        model, preprocess = load_clip(device)
-
     with st.spinner("Scoring image against taxonomy labels…"):
-        probs = clip_scores(preview_img, LABELS, model, preprocess, device, batch_size=256)
+        probs = classify_image(preview_img, LABELS, lang)
 
     st.subheader("🔮 Top matches")
     topk = 5
@@ -195,4 +225,4 @@ if st.button("▶️ Run CLIP classification"):
         st.dataframe(
             {"label": [LABELS[i] for i in topn], "prob": [float(probs[i]) for i in topn]},
             use_container_width=True,
-    )
+        )
