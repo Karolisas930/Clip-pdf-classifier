@@ -264,31 +264,90 @@ def classify_image(preview_img: Image.Image, labels: List[str], language: str, m
     return probs
 
 
+# ─────────── helpers for refine/use & notifications ───────────
+def parent_prefix(label: str) -> str:
+    """Everything before the last ' > ' segment."""
+    parts = [p.strip() for p in label.split(">")]
+    return " > ".join(parts[:-1]) if len(parts) > 1 else ""
+
+def notify(msg: str, icon: str = "✅"):
+    """Streamlit toast fallback for older versions."""
+    try:
+        st.toast(msg, icon=icon)
+    except Exception:
+        st.success(msg)
+
+
 # ─────────────────────────── Run classification ───────────────────────
 with st.sidebar:
     st.markdown("---")
     top_k = st.slider("Top-K results", 3, 20, 5)
     min_prob = st.slider("Minimum probability to list", 0.0, 0.2, 0.02, 0.01)
 
+    # Show current refine/selection state
+    if st.session_state.get("refine_prefix"):
+        st.info(f"Refining within **{st.session_state['refine_prefix']}**")
+        if st.button("Clear refine"):
+            st.session_state.pop("refine_prefix", None)
+            st.experimental_rerun()
+
+    if st.session_state.get("final_label"):
+        st.success(f"Chosen: {st.session_state['final_label']}")
+        st.caption(f"Confidence: {st.session_state.get('final_prob', 0.0):.2%}")
+
 if st.button("▶️ Run CLIP classification"):
+    # Use refined pool if the user clicked “Refine” earlier
+    labels_pool = LABELS
+    if st.session_state.get("refine_prefix"):
+        pfx = st.session_state["refine_prefix"]
+        labels_pool = [l for l in LABELS if l.startswith(pfx + " > ")]
+
     t0 = time.time()
     with st.spinner("Scoring image against taxonomy labels…"):
-        probs = classify_image(preview_img, LABELS, lang, prompt_mode, ocr_text, ocr_boost)
+        probs = classify_image(preview_img, labels_pool, lang, prompt_mode, ocr_text, ocr_boost)
     elapsed = time.time() - t0
 
     st.subheader(f"🔮 Top matches  _(took {elapsed:.2f}s)_")
     ranked = np.argsort(-probs)
     filtered = [i for i in ranked if probs[i] >= min_prob][:top_k]
+
     if not filtered:
         st.info("No labels above the selected probability threshold.")
-    else:
-        for rank, i in enumerate(filtered, start=1):
-            st.write(f"**{rank}. {LABELS[i]}** — {probs[i]:.2%}")
+        st.stop()
 
-    # Table + CSV download
+    # If we’re inside a refined branch, remind the user + offer clear
+    if st.session_state.get("refine_prefix"):
+        active_pfx = st.session_state["refine_prefix"]
+        st.info(f"Currently refining within **{active_pfx}** ({len(labels_pool)} labels).")
+        if st.button("🔄 Clear refine", key="clear_refine_top"):
+            st.session_state.pop("refine_prefix", None)
+            st.experimental_rerun()
+
+    # Show results with actions
+    for rank, i in enumerate(filtered, start=1):
+        lbl = labels_pool[i]
+        prob = float(probs[i])
+
+        c1, c2, c3 = st.columns([5, 1.2, 1.2])
+        with c1:
+            st.write(f"**{rank}. {lbl}** — {prob:.2%}")
+        with c2:
+            if st.button("Refine", key=f"ref_{i}"):
+                pfx = parent_prefix(lbl)
+                if pfx:
+                    st.session_state["refine_prefix"] = pfx
+                    st.experimental_rerun()
+        with c3:
+            if st.button("Use", key=f"use_{i}"):
+                st.session_state["final_label"] = lbl
+                st.session_state["final_prob"] = prob
+                notify("Label selected")
+
+    # Table + CSV download (uses the same pool the model saw)
     with st.expander("Show top 30 as a table"):
         topn = ranked[:30]
-        table = {"label": [LABELS[i] for i in topn], "prob": [float(probs[i]) for i in topn]}
+        table = {"label": [labels_pool[i] for i in topn],
+                 "prob": [float(probs[i]) for i in topn]}
         import pandas as pd
         df = pd.DataFrame(table)
         st.dataframe(df, use_container_width=True)
@@ -297,4 +356,29 @@ if st.button("▶️ Run CLIP classification"):
             df.to_csv(index=False).encode("utf-8"),
             file_name="predictions.csv",
             mime="text/csv",
-    )
+        )
+
+    # If the user picked a label, offer export & quick search
+    if st.session_state.get("final_label"):
+        st.markdown("### ✅ Selected label")
+        st.code(st.session_state["final_label"])
+
+        import json, urllib.parse as _up, time as _t
+        payload = {
+            "label": st.session_state["final_label"],
+            "prob": st.session_state.get("final_prob"),
+            "language": lang,
+            "prompt_mode": prompt_mode,
+            "ocr_boost": ocr_boost,
+            "refine_prefix": st.session_state.get("refine_prefix"),
+            "timestamp": int(_t.time()),
+        }
+        st.download_button(
+            "Download selection (JSON)",
+            json.dumps(payload, indent=2).encode("utf-8"),
+            file_name="selection.json",
+            mime="application/json",
+        )
+
+        url = f"https://www.google.com/search?q={_up.quote(st.session_state['final_label'])}"
+        st.markdown(f"[🔎 Search this label on the web]({url})")
