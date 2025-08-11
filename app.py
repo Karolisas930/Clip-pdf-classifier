@@ -2,6 +2,7 @@
 # Smart PDF/Image classifier with CLIP + optional OCR + taxonomy from GitHub Pages
 
 import os
+import re
 import hashlib
 from io import BytesIO
 from typing import List
@@ -71,6 +72,14 @@ with st.sidebar:
     last_gen = taxo.get("meta", {}).get("generated_at", "")
     if last_gen:
         st.caption(f"Generated: {last_gen}")
+
+    # 🔧 Prompt + OCR settings
+    prompt_mode = st.selectbox(
+        "Text prompt for CLIP",
+        ["subcategory", "sub+parent", "full path"],
+        index=0,
+    )
+    ocr_boost = st.slider("OCR boost", 0.0, 1.0, 0.25, 0.05)
 
 LABELS = build_labels_from_taxonomy(taxo, lang=lang)
 st.write(f"✅ Loaded **{len(LABELS)}** labels from taxonomy ({lang.upper()}).")
@@ -150,7 +159,8 @@ def run_ocr_safe(img: Image.Image) -> str:
 
 with col2:
     st.subheader("📝 Extracted OCR Text")
-    st.write(run_ocr_safe(preview_img))
+    ocr_text = run_ocr_safe(preview_img)
+    st.write(ocr_text)
 
 
 # ─────────────────────── CLIP model + caching ─────────────────────────
@@ -162,42 +172,72 @@ def load_clip(model_name: str, device: str = "cpu"):
     model.eval()
     return model, preprocess
 
-def _labels_signature(labels: List[str], language: str, model_name: str) -> str:
-    """Compact signature so text features get cached per language + model + labels."""
+# ---------- Prompt helpers ----------
+def label_to_prompt(label: str, mode: str) -> str:
+    parts = [p.strip() for p in label.split(">")]
+    sub = parts[-1] if parts else label
+    if mode == "subcategory":
+        base = sub
+    elif mode == "sub+parent" and len(parts) >= 2:
+        base = f"{parts[-2]} {sub}"
+    else:  # "full path"
+        base = ", ".join(parts)
+    return f"a photo of {base.lower()}"
+
+def build_prompts(labels: List[str], mode: str) -> List[str]:
+    return [label_to_prompt(l, mode) for l in labels]
+
+def _prompts_signature(prompts: List[str], language: str, model_name: str, mode: str) -> str:
+    """Compact signature so text features get cached per language + model + prompts."""
     m = hashlib.md5()
-    m.update(model_name.encode()); m.update(b"|"); m.update(language.encode()); m.update(b"|")
-    for s in labels:
+    m.update(model_name.encode()); m.update(b"|"); m.update(language.encode()); m.update(b"|"); m.update(mode.encode()); m.update(b"|")
+    for s in prompts:
         m.update(s.encode()); m.update(b"\0")
     return m.hexdigest()
 
 @st.cache_resource(show_spinner=False)
 def cached_text_features(
     signature: str,
-    labels: List[str],
+    prompts: List[str],
     model_name: str,
     device: str,
     batch_size: int = 256,
 ) -> torch.Tensor:
-    """Compute & cache normalized text features (CPU tensor) for given labels."""
+    """Compute & cache normalized text features (CPU tensor) for given prompts."""
     model, _ = load_clip(model_name, device)
     feats = []
     with torch.no_grad():
-        for i in range(0, len(labels), batch_size):
-            batch = labels[i:i + batch_size]
-            tokens = clip.tokenize(batch, truncate=True).to(device)
-            txt = model.encode_text(tokens)
+        for i in range(0, len(prompts), batch_size):
+            toks = clip.tokenize(prompts[i:i + batch_size], truncate=True).to(device)
+            txt = model.encode_text(toks)
             txt = txt / txt.norm(dim=-1, keepdim=True)
             feats.append(txt.cpu())
     return torch.cat(feats, dim=0)  # (N, D) on CPU
 
+# OCR-aware re-ranking (very lightweight)
+_token_re = re.compile(r"[A-Za-z0-9]+", re.UNICODE)
+def _tokens(s: str) -> set:
+    return set(_token_re.findall(s.lower()))
 
-def classify_image(preview_img: Image.Image, labels: List[str], language: str) -> np.ndarray:
-    """Return softmax probabilities over labels using cached text embeddings."""
+def ocr_weights(labels: List[str], ocr_text: str, base_mode: str = "subcategory") -> np.ndarray:
+    if not isinstance(ocr_text, str) or not ocr_text.strip():
+        return np.ones(len(labels), dtype=np.float32)
+    text_tokens = _tokens(ocr_text)
+    w = np.ones(len(labels), dtype=np.float32)
+    for i, lbl in enumerate(labels):
+        toks = _tokens(label_to_prompt(lbl, base_mode))
+        if text_tokens.intersection(toks):
+            w[i] += 0.5  # simple bump if any token matches
+    return w
+
+def classify_image(preview_img: Image.Image, labels: List[str], language: str, mode: str, ocr_text: str, ocr_boost: float) -> np.ndarray:
+    """Return probabilities over labels using cached text embeddings + optional OCR boost."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = load_clip(MODEL_NAME, device)
 
-    sig = _labels_signature(labels, language, MODEL_NAME)
-    text_feats_cpu = cached_text_features(sig, labels, MODEL_NAME, device)
+    prompts = build_prompts(labels, mode)
+    sig = _prompts_signature(prompts, language, MODEL_NAME, mode)
+    text_feats_cpu = cached_text_features(sig, prompts, MODEL_NAME, device)
 
     with torch.no_grad():
         img = preprocess(preview_img).unsqueeze(0).to(device)
@@ -205,14 +245,21 @@ def classify_image(preview_img: Image.Image, labels: List[str], language: str) -
         img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
 
         tf = text_feats_cpu.to(device)
-        sims = (img_feat @ tf.T).softmax(dim=-1).cpu().numpy()[0]
-    return sims
+        probs = (img_feat @ tf.T).softmax(dim=-1).cpu().numpy()[0]
+
+    # OCR re-ranking (if enabled)
+    if ocr_boost > 0:
+        w = ocr_weights(labels, ocr_text, base_mode="subcategory")
+        probs = probs * (1.0 + ocr_boost * (w - 1.0))
+        probs = probs / probs.sum()
+
+    return probs
 
 
 # ─────────────────────────── Run classification ───────────────────────
 if st.button("▶️ Run CLIP classification"):
     with st.spinner("Scoring image against taxonomy labels…"):
-        probs = classify_image(preview_img, LABELS, lang)
+        probs = classify_image(preview_img, LABELS, lang, prompt_mode, ocr_text, ocr_boost)
 
     st.subheader("🔮 Top matches")
     topk = 5
