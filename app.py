@@ -85,12 +85,22 @@ if uploaded.type == "application/pdf":
     preview_img = Image.open(BytesIO(pix.tobytes("png"))).convert("RGB")
 else:
     preview_img = Image.open(uploaded).convert("RGB")
-
-# Show preview
+    
+# Show preview (robust: PNG bytes with NumPy fallback)
 col1, col2 = st.columns([1, 1])
 with col1:
-    st.image(preview_img, caption="Preview", use_container_width=True)
-
+    if preview_img is None:
+        st.error("Couldn’t build a preview image.")
+        st.stop()
+    try:
+        buf = BytesIO()
+        preview_img.save(buf, format="PNG")
+        buf.seek(0)
+        st.image(buf.getvalue(), caption="Preview", use_container_width=True)
+    except Exception as e:
+        st.warning(f"Preview via PNG bytes failed ({e}). Falling back.")
+        st.image(np.asarray(preview_img), caption="Preview", use_container_width=True)
+        
 # OCR (best-effort; won’t crash the app)
 def run_ocr_safe(img: Image.Image) -> str:
     if extract_text_from_image is None:
