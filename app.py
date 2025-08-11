@@ -3,6 +3,7 @@
 
 import os
 import re
+import time
 import hashlib
 from io import BytesIO
 from typing import List
@@ -97,15 +98,21 @@ if not uploaded:
 
 
 # ───────────────────── Build a preview PIL.Image ──────────────────────
-def pdf_first_page_to_image(pdf_bytes: bytes, scale: float = 2.0) -> Image.Image:
-    """Render first page of a PDF (from bytes) into a PIL RGB image."""
+def pdf_page_to_image(pdf_bytes: bytes, page_index: int, scale: float = 2.0) -> Image.Image:
+    """Render selected page of a PDF (from bytes) into a PIL RGB image."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    page = doc.load_page(0)
+    page = doc.load_page(page_index)
     pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
     return Image.open(BytesIO(pix.tobytes("png"))).convert("RGB")
 
+# If it's a PDF, offer page + scale controls in the sidebar
 if uploaded.type == "application/pdf":
-    preview_img: Image.Image = pdf_first_page_to_image(uploaded.getvalue(), scale=2.0)
+    pdf_bytes = uploaded.getvalue()
+    tmp_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    with st.sidebar:
+        page_no = st.number_input("PDF page", 1, tmp_doc.page_count, 1)
+        render_scale = st.slider("Render scale", 1.0, 3.0, 2.0, 0.5)
+    preview_img: Image.Image = pdf_page_to_image(pdf_bytes, int(page_no - 1), render_scale)
 else:
     preview_img = Image.open(uploaded).convert("RGB")
 
@@ -245,7 +252,8 @@ def classify_image(preview_img: Image.Image, labels: List[str], language: str, m
         img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
 
         tf = text_feats_cpu.to(device)
-        probs = (img_feat @ tf.T).softmax(dim=-1).cpu().numpy()[0]
+        logits = img_feat @ tf.T
+        probs = logits.softmax(dim=-1).cpu().numpy()[0]
 
     # OCR re-ranking (if enabled)
     if ocr_boost > 0:
@@ -257,19 +265,36 @@ def classify_image(preview_img: Image.Image, labels: List[str], language: str, m
 
 
 # ─────────────────────────── Run classification ───────────────────────
+with st.sidebar:
+    st.markdown("---")
+    top_k = st.slider("Top-K results", 3, 20, 5)
+    min_prob = st.slider("Minimum probability to list", 0.0, 0.2, 0.02, 0.01)
+
 if st.button("▶️ Run CLIP classification"):
+    t0 = time.time()
     with st.spinner("Scoring image against taxonomy labels…"):
         probs = classify_image(preview_img, LABELS, lang, prompt_mode, ocr_text, ocr_boost)
+    elapsed = time.time() - t0
 
-    st.subheader("🔮 Top matches")
-    topk = 5
-    top_idx = np.argsort(-probs)[:topk]
-    for rank, i in enumerate(top_idx, start=1):
-        st.write(f"**{rank}. {LABELS[i]}** — {probs[i]:.2%}")
+    st.subheader(f"🔮 Top matches  _(took {elapsed:.2f}s)_")
+    ranked = np.argsort(-probs)
+    filtered = [i for i in ranked if probs[i] >= min_prob][:top_k]
+    if not filtered:
+        st.info("No labels above the selected probability threshold.")
+    else:
+        for rank, i in enumerate(filtered, start=1):
+            st.write(f"**{rank}. {LABELS[i]}** — {probs[i]:.2%}")
 
+    # Table + CSV download
     with st.expander("Show top 30 as a table"):
-        topn = np.argsort(-probs)[:30]
-        st.dataframe(
-            {"label": [LABELS[i] for i in topn], "prob": [float(probs[i]) for i in topn]},
-            use_container_width=True,
-        )
+        topn = ranked[:30]
+        table = {"label": [LABELS[i] for i in topn], "prob": [float(probs[i]) for i in topn]}
+        import pandas as pd
+        df = pd.DataFrame(table)
+        st.dataframe(df, use_container_width=True)
+        st.download_button(
+            "Download CSV",
+            df.to_csv(index=False).encode("utf-8"),
+            file_name="predictions.csv",
+            mime="text/csv",
+    )
