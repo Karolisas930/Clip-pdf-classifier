@@ -3,10 +3,16 @@ import streamlit as st
 import numpy as np
 import torch
 import clip
+from io import BytesIO
 from PIL import Image
 import fitz  # PyMuPDF
-from ocr_utils import extract_text_from_image
 import requests
+
+# Optional OCR import (we'll guard calls below)
+try:
+    from ocr_utils import extract_text_from_image
+except Exception:  # missing dep or import error
+    extract_text_from_image = None
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Page config
@@ -52,7 +58,8 @@ with st.sidebar:
     default_idx = langs.index("en") if "en" in langs else 0
     lang = st.selectbox("Label language", options=langs, index=default_idx)
     last_gen = taxo.get("meta", {}).get("generated_at", "")
-    if last_gen:st.caption(f"Generated: {last_gen}")
+    if last_gen:
+        st.caption(f"Generated: {last_gen}")
 
 LABELS = build_labels_from_taxonomy(taxo, lang=lang)
 st.write(f"✅ Loaded **{len(LABELS)}** labels from taxonomy ({lang.upper()}).")
@@ -68,47 +75,63 @@ if not uploaded:
     st.info("Please upload a PDF or image file to classify.")
     st.stop()
 
-# Turn upload into preview image
-image_path = "preview.png"
+# Turn upload into an in-memory preview image (PIL.Image)
+preview_img: Image.Image | None = None
 if uploaded.type == "application/pdf":
-    with open("temp.pdf", "wb") as f:
-        f.write(uploaded.getbuffer())
-    doc = fitz.open("temp.pdf")
+    # Render first page directly from bytes at 2× scale for readability
+    doc = fitz.open(stream=uploaded.getvalue(), filetype="pdf")
     page = doc.load_page(0)
-    pix = page.get_pixmap()  # first page as image
-    pix.save(image_path)
+    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+    preview_img = Image.open(BytesIO(pix.tobytes("png"))).convert("RGB")
 else:
-    img = Image.open(uploaded).convert("RGB")
-    img.save(image_path)
+    preview_img = Image.open(uploaded).convert("RGB")
 
-# Show preview and OCR
-col1, col2 = st.columns([1,1])
+# Show preview
+col1, col2 = st.columns([1, 1])
 with col1:
-    st.image(image_path, caption="Preview", use_container_width=True)
+    st.image(preview_img, caption="Preview", use_container_width=True)
+
+# OCR (best-effort; won’t crash the app)
+def run_ocr_safe(img: Image.Image) -> str:
+    if extract_text_from_image is None:
+        return "OCR not available in this build."
+    # Try passing the PIL image; if their util expects a path, fall back.
+    try:
+        return extract_text_from_image(img) or ""
+    except TypeError:
+        tmp = "_ocr_preview.png"
+        img.save(tmp)
+        try:
+            return extract_text_from_image(tmp) or ""
+        finally:
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+    except Exception as e:
+        return f"OCR failed: {e}"
+
 with col2:
     st.subheader("📝 Extracted OCR Text")
-    try:
-        st.write(extract_text_from_image(image_path))
-    except Exception as e:
-        st.warning(f"OCR failed: {e}")
+    st.write(run_ocr_safe(preview_img))
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CLIP classification (batched so it fits CPU/GPU memory)
-def clip_scores(image_path, labels, model, preprocess, device, batch_size=256):
-    img = preprocess(Image.open(image_path)).unsqueeze(0).to(device)
+def clip_scores(image_pil: Image.Image, labels, model, preprocess, device, batch_size=256):
+    img_tensor = preprocess(image_pil).unsqueeze(0).to(device)
     with torch.no_grad():
-        image_features = model.encode_image(img)
+        image_features = model.encode_image(img_tensor)
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         scores = []
         for i in range(0, len(labels), batch_size):
-            batch = labels[i:i+batch_size]
+            batch = labels[i:i + batch_size]
             tokens = clip.tokenize(batch, truncate=True).to(device)
             text_features = model.encode_text(tokens)
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
             sims = (image_features @ text_features.T).cpu().numpy()[0]
             scores.extend(sims.tolist())
-    scores = np.array(scores)
-    # softmax across all labels (not per-batch)
+    scores = np.array(scores, dtype=np.float32)
+    # softmax across all labels
     exps = np.exp(scores - scores.max())
     probs = exps / exps.sum()
     return probs
@@ -119,7 +142,7 @@ if st.button("▶️ Run CLIP classification"):
         model, preprocess = clip.load("ViT-B/32", device=device)
 
     with st.spinner("Scoring image against taxonomy labels…"):
-        probs = clip_scores(image_path, LABELS, model, preprocess, device, batch_size=256)
+        probs = clip_scores(preview_img, LABELS, model, preprocess, device, batch_size=256)
 
     st.subheader("🔮 Top matches")
     topk = 5
